@@ -25,6 +25,7 @@ GOOD_PARAMS = (
 
 @pytest.fixture()
 def prepare():
+    Patient.is_header_written = False
     with open(CSV_PATH, 'w', encoding='utf-8') as f:
         f.write('')
     for params in GOOD_PARAMS:
@@ -74,5 +75,5 @@ def test_limit_remove_records():
     collection = PatientCollection(CSV_PATH)
     limit = collection.limit(4)
     with open(CSV_PATH, 'w', encoding='utf-8') as f:
-        f.write('')
+        f.write('\n')
     assert len([_ for _ in limit]) == 0, "Limit works wrong for empty file"

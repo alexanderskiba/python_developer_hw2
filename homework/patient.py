@@ -1,6 +1,7 @@
 import logging
 import csv
 import re
+import os
 
 # Определим логгер
 def setup_logger(logger_name, log_file, level=logging.INFO):
@@ -61,18 +62,28 @@ class LogAndChange(object):
         return val
 
     # Проверка номера документа
-    def _check_doc_id(self, val, doc_type): # в doc_type будем передавать значение из dict объекта по ключу document_type
+    def _check_doc_id(self, val, obj): # в doc_type будем передавать значение из dict объекта по ключу document_type
         _valid_len = {
             'Паспорт' : 10,
             'Водительские права' : 10,
             'Заграничный паспорт' : 9,
         }
+        doc_type =  obj.__dict__.get('document_type')
         v_len = _valid_len[doc_type] # Получим валидную длину указанного(doc_type) документа
         val = re.sub(r'[^0-9]+', r'', val)  # удалим все лишнее и непонятное
 
         if len(val) != v_len:
             self._error_logger.error('Неверное количество цифр в номере документа')
             raise ValueError('Неверное количество цифр в номере документа ')
+        return val
+
+    def _check_name(self, val, obj):
+        if not val.isalpha():
+            self._error_logger.error(f'Невалидное {self.name} {val}')
+            raise ValueError(f'Невалидное {self.name} {val}')
+        if self.name in obj.__dict__: #Если такое имя уже существует у объекта (позволяет избежать записи
+            self._error_logger.error(f'Попытка изменить {self.name}') # о смене фамилии или имени с None на текущую)
+            raise AttributeError(f'Попытка изменить {self.name}')
         return val
 
     def __init__(self, name='название_атрибута'):
@@ -84,44 +95,31 @@ class LogAndChange(object):
         return obj.__dict__[self.name] # вернем значение атрибута по ключу(названию атрибута)
 
     def __set__(self, obj, val):
-        if not isinstance(val, str):
+        if not isinstance(val, str): #  
             self._error_logger.error(f'Неверный тип {val} - {type(val)}')
             raise TypeError(f'Неверный тип {val} - {type(val)}')
-        if self.name == 'birth_date':
+        
+        if self.name in ['first_name', 'last_name']:
+            val = self._check_name(val, obj)
+        elif self.name == 'birth_date':
             val = self._check_date(val)
-        if self.name == 'phone':
+        elif self.name == 'phone':
             val = self._check_phone(val)
-        if self.name == 'document_type':
+        elif self.name == 'document_type':
             val = self._check_document_type(val)
-        if self.name == 'document_id':
-            val = self._check_doc_id(val, obj.__dict__.get('document_type')) #передаем номер документа и тип документа из dict объекта
-        if self.name == 'first_name':
-            if not val.isalpha():
-                self._error_logger.error('Невалидное имя {val}')
-                raise ValueError(f'Невалидное имя {val}')
-            if self.name in obj.__dict__: #Если такое имя уже существует у объекта (позволяет избежать записи
-                self._error_logger.error('Попытка изменить имя') # о смене фамилии или имени с None на текущую)
-                raise AttributeError('Попытка изменить имя')
-        elif self.name == 'last_name':
-            if not val.isalpha():
-                self._error_logger.error('Невалидная фамилия {val}')
-                raise ValueError(f'Невалидная фамилия {val}')
-            if self.name in obj.__dict__: # Если такая фамилия уже существует у объекта
-                self._error_logger.error('Попытка изменить фамилию')
-                raise AttributeError('Попытка изменить фамилию')
-        else:
-            if self.name in obj.__dict__: # изменяем только в том случае, когда объект существует
-                self._info_logger.info(
-                    f"Изменяю {self.name} у пациента {obj.first_name} {obj.last_name} c {obj.__dict__.get(self.name)} на {val}")
+        elif self.name == 'document_id':
+            val = self._check_doc_id(val, obj) #передаем объект для получения типа документа 
+        
+        if self.name in obj.__dict__: # изменяем только в том случае, когда объект существует
+            self._info_logger.info(
+                f"Изменяю {self.name} у пациента {obj.first_name} {obj.last_name} c {obj.__dict__.get(self.name)} на {val}")
         obj.__dict__[self.name] = val
-
 
 
 
 class Patient:
     header = ['Имя', 'Фамилия', 'Дата рождения', 'Телефон', 'Вид документа', 'Номер документа']
     is_header_written = False # флаг, определяющий существование заголовка
-
     first_name = LogAndChange('first_name')
     last_name = LogAndChange('last_name')
     birth_date = LogAndChange('birth_date')
@@ -150,9 +148,9 @@ class Patient:
         self._info_logger.info(f'Создан объект {self.first_name} {self.last_name} '
                     f'{self.birth_date} {self.phone} {self.document_type} {self.document_id}')
 
-    @classmethod
-    def create(cls, first_name, last_name, birth_date, phone, document_type, document_id):
-        return cls(first_name, last_name, birth_date, phone, document_type, document_id)
+    @staticmethod
+    def create(first_name, last_name, birth_date, phone, document_type, document_id):
+        return Patient(first_name, last_name, birth_date, phone, document_type, document_id)
 
         # Сохраняем пациента в csv таблицу
     def save(self):
@@ -190,33 +188,53 @@ class Patient:
 class PatientCollection:
     def __init__(self, path_to_file):
         self.path_to_file = path_to_file
-        self.patient_list = []
         with open(self.path_to_file) as csv_fd:
             reader = csv.reader(csv_fd, delimiter=';')
             next(reader)  # пропускаем заголовок
-            for ind, row in enumerate (reader,1):
-                p = Patient(*row) # Распакуем данные пациента из файла для создания объекта
-                p._saved = True # Теперь объект сохранен
-                p._row_idx = ind # Индекс объекта
-                self.patient_list.append(p) # Добавим пациента в список
-            Patient.current_row_idx = len(self.patient_list)
+            for ind, row in enumerate(reader,1): # считаем количество записей в файле
+                pass
+            Patient.current_row_idx = ind
             Patient.is_header_written = True
 
     def __iter__(self):
         with open(self.path_to_file, 'rb', buffering=0) as fp:
-            # next(fp)
-            for line in fp:
+            next(fp) # пропускаем заголовок
+            for i, line in enumerate(fp, 1):
                 row = line.decode().split(';')
                 p = Patient(*row)
+                p._saved = True # пациент сохранен
+                p._row_idx = i # в строке i
                 yield p
 
     def limit(self,num):
         with open(self.path_to_file, 'rb', buffering=0) as fp:
-
-            for i, l in enumerate(fp):
+            next(fp) # пропускаем заголовок
+            for i, l in enumerate(fp,1):
                 if i > num:
                     break
                 row = l.decode().split(';')
                 p = Patient(*row)
+                p._saved = True # пациент сохранен
+                p._row_idx = i # в строке i
                 yield p
 
+
+if __name__ == "__main__":
+    # код для создания файла
+    # p = Patient('Vasya', 'Pupkin','08-04-1994','89126116381','паспорт','5162333666')
+    # p.save()
+    # p = Patient('Pip', 'Lil','08-04-1995','89126116456','паспорт','5162444666')
+    # p.save()
+    # p = Patient('Lil', 'Nas','08-04-1984','89126456891','паспорт','5162555666')
+    # p.save()
+
+    # код для проверки сохранения изменений и записи нового пациента
+    if os.path.isfile('patient.csv'):
+        pc = PatientCollection('patient.csv')
+        
+    for p_ in pc.limit(1):
+        p_.birth_date = '11-01-1151'
+        p_.save()
+
+    p = Patient('Alexey', 'Putin','08-06-1984','89126756891','паспорт','5162755666')
+    p.save()

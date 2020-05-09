@@ -14,12 +14,18 @@ P.S.
  Перед созданием пациента логируется изменение полей, как сделать в декораторе так, чтобы логирование шло именно при реальном изменении, пока не придумал.
 
 P.P.S так же необходимо проделать:
+
 pip3 install psycopg2-binary
+
 В Linux может потребоваться sudo apt install libpq-dev
+
 Ну и сам postgres:
 
 Create the file /etc/apt/sources.list.d/pgdg.list and add a line for the repository
+
 deb http://apt.postgresql.org/pub/repos/apt/ YOUR_UBUNTU_VERSION_HERE-pgdg main
+
 Import the repository signing key, and update the package lists
+
 wget --quiet -O - https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo apt-key add -
 sudo apt-get update
